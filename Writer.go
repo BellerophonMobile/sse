@@ -52,7 +52,7 @@ func (x *Writer) Event(event string, p []byte) (int, error) {
 
 	// If stream is not SSE, just print the data
 	if !x.SSE {
-		n,err = fmt.Fprintf(x.Response, "%s\n", p)
+		n,err = fmt.Fprintf(x.Response, "%s\n\n", p)
 		return n,err
 	}
 
