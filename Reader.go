@@ -61,7 +61,6 @@ func (x *Reader) Next() (*Event,error) {
 			break
 		}
 	}
-	fmt.Printf("'%s'", line)
 	
 	if !bytes.HasPrefix(line, []byte("event:")) {
 		return nil, fmt.Errorf("Expected event tag, got '%s'", line)
@@ -72,7 +71,6 @@ func (x *Reader) Next() (*Event,error) {
 	if err != nil {
 		return nil,err
 	}
-	fmt.Printf("'%s'", line)
 	
 	i := bytes.Index(line, []byte{':'})
 	if i == -1 {
