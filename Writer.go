@@ -40,6 +40,9 @@ func NewWriter(w http.ResponseWriter, r *http.Request) (*Writer,error) {
 		x.SSE = true
 	}
 
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	
 	return x,nil
 }
 
@@ -47,11 +50,14 @@ func (x *Writer) Event(event string, p []byte) (int, error) {
 	var count, n int
 	var err error
 
+	fmt.Println("Event")
+	
 	defer x.Flusher.Flush()
 
 
 	// If stream is not SSE, just print the data
 	if !x.SSE {
+		fmt.Println("!SSE")
 		n,err = fmt.Fprintf(x.Response, "%s\n\n", p)
 		return n,err
 	}
@@ -59,6 +65,7 @@ func (x *Writer) Event(event string, p []byte) (int, error) {
 
 	// Otherwise, it's SSE, include the optional event tag and data prefix	
 	if event != "" {
+		fmt.Println("event")
 		n, err = fmt.Fprintf(x.Response, "event: %s\n", event)
 		count += n
 		if err != nil {
@@ -66,6 +73,7 @@ func (x *Writer) Event(event string, p []byte) (int, error) {
 		}	
 	}
 
+	fmt.Println("write")	
 	n, err = fmt.Fprintf(x.Response, "data: %s\n\n", p)
 	count += n
 	return count, err
