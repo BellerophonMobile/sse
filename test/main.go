@@ -10,9 +10,29 @@ import (
 
 func main() {
 
-	http.HandleFunc("/events", Generator)
+	out := sse.NewEventServer(nil)
+
+	go func() {
+	c := 0
+	for {
+		msg := fmt.Sprintf(
+`Just sit right back and you'll hear a tale
+a tale of a fateful trip,
+that started from this tropic port,
+aboard this tiny ship.
+
+[%v]`, c)
+		out.Message(msg)
+		fmt.Println("Generated " + msg)
+		time.Sleep(1 * time.Second)
+		c++
+	}
+	}()
+	
+	http.HandleFunc("/events", out.Handle)
 	http.HandleFunc("/view", Viewer)
 	log.Fatal(http.ListenAndServe(":8080", nil))
+
 	
 }
 
@@ -23,7 +43,7 @@ func Viewer(w http.ResponseWriter, r *http.Request) {
 <!DOCTYPE html>
 <html>
 <body>
-Events:
+Events:<br/>
 
 	<script type="text/javascript">
 	    var source = new EventSource('/events');
@@ -34,7 +54,7 @@ Events:
           console.log("OnError: " + e)
       }
 	    source.onmessage = function(e) {
-          console.log("OnMessage:" + e)
+          console.log("OnMessage:" + e.data)
 	        document.body.innerHTML += e.data + '<br>';
 	    }
       source.addEventListener("urgentupdate", function(e) {
@@ -46,23 +66,4 @@ Events:
 </html>
 `)
 	
-}
-
-func Generator(w http.ResponseWriter, r *http.Request) {
-
-	log.Println("Generator")
-	
-	writer,err := sse.NewWriter(w, r)
-	if err != nil {
-		fmt.Fprint(w, "SSE unsupported")
-		return
-	}
-
-	c := 0
-	for {
-		writer.Event("urgentupdate", []byte("OK"))
-		time.Sleep(1 * time.Second)
-		c++
-	}
-
 }

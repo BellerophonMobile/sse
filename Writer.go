@@ -3,10 +3,11 @@ package sse
 import (
 	"fmt"
 	"net/http"
-	"encoding/json"
+	"strings"
 )
 
 type Writer struct {
+
 	// Response is the HTTP response object.
 	Response http.ResponseWriter
 	Flusher http.Flusher
@@ -15,19 +16,19 @@ type Writer struct {
 	// checked to determine what the output Content-Type should be.
 	Request *http.Request
 
-	// If no event tag is provided and SSE is enabled, the next write
-	// will include this event tag.
-	DefaultEvent string
-
 	// True if the connection accepts SSE streams.
 	SSE bool
+
 }
 
 var FlushUnsupported = fmt.Errorf("Streaming not supported")
 
-func NewWriter(w http.ResponseWriter, r *http.Request) (*Writer,error) {
+func NewWriter(w http.ResponseWriter, r *http.Request, retrymillis int) (*Writer,error) {
 
-	x := &Writer{Response: w, Request: r}
+	x := &Writer{
+		Response: w,
+		Request: r,
+	}
 
 	var ok bool
 	x.Flusher,ok = w.(http.Flusher)
@@ -42,30 +43,40 @@ func NewWriter(w http.ResponseWriter, r *http.Request) (*Writer,error) {
 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+
+	if retrymillis != 0 {
+		_, err := fmt.Fprintf(x.Response, "retry: %s\n\n", retrymillis)
+		if err != nil {
+			return nil, err
+		}
+	}
 	
 	return x,nil
 }
 
-func (x *Writer) Event(event string, p []byte) (int, error) {
+func (x *Writer) Event(id string, event string, data string) (int, error) {
 	var count, n int
 	var err error
 
-	fmt.Println("Event")
-	
 	defer x.Flusher.Flush()
-
 
 	// If stream is not SSE, just print the data
 	if !x.SSE {
-		fmt.Println("!SSE")
-		n,err = fmt.Fprintf(x.Response, "%s\n\n", p)
+		n,err = fmt.Fprintf(x.Response, "%s\n\n", data)
 		return n,err
 	}
 
+	// Otherwise, it's SSE
 
-	// Otherwise, it's SSE, include the optional event tag and data prefix	
+	if id != "" {
+		n, err = fmt.Fprintf(x.Response, "id: %s\n", id)
+		count += n
+		if err != nil {
+			return count, err
+		}	
+	}
+
 	if event != "" {
-		fmt.Println("event")
 		n, err = fmt.Fprintf(x.Response, "event: %s\n", event)
 		count += n
 		if err != nil {
@@ -73,22 +84,10 @@ func (x *Writer) Event(event string, p []byte) (int, error) {
 		}	
 	}
 
-	fmt.Println("write")	
-	n, err = fmt.Fprintf(x.Response, "data: %s\n\n", p)
+	data = strings.Replace(data, "\n", "\ndata: ", -1)
+	
+	n, err = fmt.Fprintf(x.Response, "data: %s\n\n", data)
 	count += n
 	return count, err
 
-}
-
-func (x *Writer) Write(p []byte) (int, error) {
-	return x.Event(x.DefaultEvent, p)
-}
-
-func (x *Writer) JSONEvent(event string, obj interface{}) (int, error) {
-	bits, err := json.Marshal(obj)
-	if err != nil {
-		return 0,err
-	}
-
-	return x.Event(event, bits)
 }
