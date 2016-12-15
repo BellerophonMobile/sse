@@ -10,32 +10,31 @@ type Writer struct {
 
 	// Response is the HTTP response object.
 	Response http.ResponseWriter
-	Flusher http.Flusher
-	
+	Flusher  http.Flusher
+
 	// Request is the incoming HTTP request.  The Accept header is
 	// checked to determine what the output Content-Type should be.
 	Request *http.Request
 
 	// True if the connection accepts SSE streams.
 	SSE bool
-
 }
 
 var FlushUnsupported = fmt.Errorf("Streaming not supported")
 
-func NewWriter(w http.ResponseWriter, r *http.Request, retrymillis int) (*Writer,error) {
+func NewWriter(w http.ResponseWriter, r *http.Request, retrymillis int) (*Writer, error) {
 
 	x := &Writer{
 		Response: w,
-		Request: r,
+		Request:  r,
 	}
 
 	var ok bool
-	x.Flusher,ok = w.(http.Flusher)
+	x.Flusher, ok = w.(http.Flusher)
 	if !ok {
-		return nil,FlushUnsupported
+		return nil, FlushUnsupported
 	}
-	
+
 	if r.Header.Get("Accept") == "text/event-stream" {
 		w.Header().Add("Content-Type", "text/event-stream")
 		x.SSE = true
@@ -50,8 +49,8 @@ func NewWriter(w http.ResponseWriter, r *http.Request, retrymillis int) (*Writer
 			return nil, err
 		}
 	}
-	
-	return x,nil
+
+	return x, nil
 }
 
 func (x *Writer) Event(id string, event string, data string) (int, error) {
@@ -62,8 +61,8 @@ func (x *Writer) Event(id string, event string, data string) (int, error) {
 
 	// If stream is not SSE, just print the data
 	if !x.SSE {
-		n,err = fmt.Fprintf(x.Response, "%s\n\n", data)
-		return n,err
+		n, err = fmt.Fprintf(x.Response, "%s\n\n", data)
+		return n, err
 	}
 
 	// Otherwise, it's SSE
@@ -73,7 +72,7 @@ func (x *Writer) Event(id string, event string, data string) (int, error) {
 		count += n
 		if err != nil {
 			return count, err
-		}	
+		}
 	}
 
 	if event != "" {
@@ -81,11 +80,11 @@ func (x *Writer) Event(id string, event string, data string) (int, error) {
 		count += n
 		if err != nil {
 			return count, err
-		}	
+		}
 	}
 
 	data = strings.Replace(data, "\n", "\ndata: ", -1)
-	
+
 	n, err = fmt.Fprintf(x.Response, "data: %s\n\n", data)
 	count += n
 	return count, err
