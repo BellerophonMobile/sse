@@ -1,1 +1,4 @@
-*~
+/demoserver
+/democlient
+/coverage.out
+/coverage.html

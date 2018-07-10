@@ -1,92 +1,49 @@
 package sse
 
 import (
-	"fmt"
 	"net/http"
-	"strings"
+	"time"
 )
 
-type Writer struct {
+const headerAccept = "Accept"
 
-	// Response is the HTTP response object.
-	Response http.ResponseWriter
-	Flusher  http.Flusher
+// Writer is an interface capable of sending SSE events.
+type Writer interface {
+	// Close releases any resources associated with this writer. This writer
+	// should no longer be used after this is called.
+	Close()
 
-	// Request is the incoming HTTP request.  The Accept header is
-	// checked to determine what the output Content-Type should be.
-	Request *http.Request
+	// Send sends an event to this writer. ID and event can be empty strings, in
+	// which case, they will not be sent. If id is a single whitespace character,
+	// an empty ID will be sent to reset the client's last-event-id.
+	Send(*Event) error
 
-	// True if the connection accepts SSE streams.
-	SSE bool
+	// SetRetryTime sets the client-side reconnection timeout for SSE-enabled
+	// clients. If the client disconnects, it will try to reconnect after this
+	// long. If the client doesn't support SSE, this is a no-op.
+	SetRetryTime(time.Duration) error
 }
 
-var FlushUnsupported = fmt.Errorf("Streaming not supported")
+// NewWriter creates a writer based on the Accept header of the given request.
+// It also sets an appropriate Content-Type, Cache-Control, and Connection
+// headers.
+func NewWriter(w http.ResponseWriter, r *http.Request) Writer {
+	isSSE := r.Header.Get(headerAccept) == MIMETypeSSE
 
-func NewWriter(w http.ResponseWriter, r *http.Request, retrymillis int) (*Writer, error) {
+	w.Header().Set(headerCacheControl, cacheControlNoCache)
+	w.Header().Set(headerConnection, connectionKeepAlive)
 
-	x := &Writer{
-		Response: w,
-		Request:  r,
+	if !isSSE {
+		w.Header().Add(headerContentType, MIMETypePlain)
+		writer := &PlainWriter{Writer: w}
+		writer.Flusher, _ = w.(http.Flusher)
+		return writer
 	}
 
-	var ok bool
-	x.Flusher, ok = w.(http.Flusher)
-	if !ok {
-		return nil, FlushUnsupported
-	}
+	w.Header().Add(headerContentType, MIMETypeSSE)
 
-	if r.Header.Get("Accept") == "text/event-stream" {
-		w.Header().Add("Content-Type", "text/event-stream")
-		x.SSE = true
-	}
+	writer := &EventWriter{Writer: w}
+	writer.Flusher, _ = w.(http.Flusher)
 
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	if retrymillis != 0 {
-		_, err := fmt.Fprintf(x.Response, "retry: %s\n\n", retrymillis)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return x, nil
-}
-
-func (x *Writer) Event(id string, event string, data string) (int, error) {
-	var count, n int
-	var err error
-
-	defer x.Flusher.Flush()
-
-	// If stream is not SSE, just print the data
-	if !x.SSE {
-		n, err = fmt.Fprintf(x.Response, "%s\n\n", data)
-		return n, err
-	}
-
-	// Otherwise, it's SSE
-
-	if id != "" {
-		n, err = fmt.Fprintf(x.Response, "id: %s\n", id)
-		count += n
-		if err != nil {
-			return count, err
-		}
-	}
-
-	if event != "" {
-		n, err = fmt.Fprintf(x.Response, "event: %s\n", event)
-		count += n
-		if err != nil {
-			return count, err
-		}
-	}
-
-	data = strings.Replace(data, "\n", "\ndata: ", -1)
-
-	n, err = fmt.Fprintf(x.Response, "data: %s\n\n", data)
-	count += n
-	return count, err
-
+	return writer
 }
