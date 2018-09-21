@@ -2,7 +2,6 @@ package sse
 
 import (
 	"container/list"
-	"sync"
 	"time"
 )
 
@@ -17,27 +16,18 @@ type GroupWriter struct {
 	// joining the group.
 	HistoryLimit int
 
-	writers    list.List
-	writerLock sync.Mutex
-
-	history     list.List
-	historyLock sync.RWMutex
+	writers list.List
+	history list.List
 }
 
 // Close releases any resources associated with this writer. This will also
 // close all Writers in the group. This writer should no longer be used after
 // this is called.
 func (g *GroupWriter) Close() {
-	g.writerLock.Lock()
-	defer g.writerLock.Unlock()
-
-	g.historyLock.Lock()
-	defer g.historyLock.Unlock()
-
-	for el := g.writers.Front(); el != nil; el = el.Next() {
-		writer := el.Value.(Writer)
-		writer.Close()
-	}
+	g.forEachWriter(func(w Writer) error {
+		w.Close()
+		return nil
+	})
 
 	g.writers.Init()
 	g.history.Init()
@@ -47,23 +37,15 @@ func (g *GroupWriter) Close() {
 // writer. It returns an unsubscription function on success, or an error if
 // there was a failure sending history.
 func (g *GroupWriter) Subscribe(w Writer, lastEventID string) (func(), error) {
-	g.historyLock.RLock()
-	defer g.historyLock.RUnlock()
-
 	for el := g.findHistory(lastEventID); el != nil; el = el.Next() {
 		if err := w.Send(el.Value.(*Event)); err != nil {
 			return nil, err
 		}
 	}
 
-	g.writerLock.Lock()
-	defer g.writerLock.Unlock()
-
 	el := g.writers.PushBack(w)
 
 	return func() {
-		g.writerLock.Lock()
-		defer g.writerLock.Unlock()
 		g.writers.Remove(el)
 	}, nil
 }
@@ -78,23 +60,9 @@ func (g *GroupWriter) Subscribe(w Writer, lastEventID string) (func(), error) {
 func (g *GroupWriter) Send(evt *Event) error {
 	g.pushHistory(evt)
 
-	g.writerLock.Lock()
-	defer g.writerLock.Unlock()
-
-	var firstErr error
-
-	for el := g.writers.Front(); el != nil; el = el.Next() {
-		writer := el.Value.(Writer)
-		if err := writer.Send(evt); err != nil {
-			g.writers.Remove(el)
-
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
-	}
-
-	return firstErr
+	return g.forEachWriter(func(w Writer) error {
+		return w.Send(evt)
+	})
 }
 
 // SetRetryTime sets the client-side reconnection timeout for SSE-enabled
@@ -104,15 +72,19 @@ func (g *GroupWriter) Send(evt *Event) error {
 //
 // If an error occurs writing to one of the writers in the group, it will be
 // removed. The first of such an error will be returned, if any.
-func (g *GroupWriter) SetRetryTime(time time.Duration) error {
-	g.writerLock.Lock()
-	defer g.writerLock.Unlock()
+func (g *GroupWriter) SetRetryTime(t time.Duration) error {
+	return g.forEachWriter(func(w Writer) error {
+		return w.SetRetryTime(t)
+	})
+}
 
+func (g *GroupWriter) forEachWriter(fn func(w Writer) error) error {
 	var firstErr error
 
 	for el := g.writers.Front(); el != nil; el = el.Next() {
 		writer := el.Value.(Writer)
-		if err := writer.SetRetryTime(time); err != nil {
+
+		if err := fn(writer); err != nil {
 			g.writers.Remove(el)
 
 			if firstErr == nil {
@@ -139,9 +111,6 @@ func (g *GroupWriter) findHistory(id string) *list.Element {
 }
 
 func (g *GroupWriter) pushHistory(event *Event) {
-	g.historyLock.Lock()
-	defer g.historyLock.Unlock()
-
 	g.history.PushBack(event)
 
 	for g.history.Len() > g.HistoryLimit {

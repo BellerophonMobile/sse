@@ -3,6 +3,7 @@ package sse
 import (
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -44,7 +45,8 @@ type HandlerConfig struct {
 type Handler struct {
 	RetryTime time.Duration
 
-	group GroupWriter
+	group     GroupWriter
+	groupLock sync.Mutex
 
 	closed    bool
 	closeChan chan struct{}
@@ -70,7 +72,11 @@ func (h *Handler) Close() {
 	}
 
 	h.closed = true
+
+	h.groupLock.Lock()
+	defer h.groupLock.Unlock()
 	h.group.Close()
+
 	close(h.closeChan)
 }
 
@@ -86,6 +92,8 @@ func (h *Handler) Send(evt *Event) error {
 		return ErrHandlerClosed
 	}
 
+	h.groupLock.Lock()
+	defer h.groupLock.Unlock()
 	return h.group.Send(evt)
 }
 
@@ -115,7 +123,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lastEventID := r.Header.Get(headerLastEventID)
-	unsubscribe, err := h.group.Subscribe(writer, lastEventID)
+	unsubscribe, err := h.subscribe(writer, lastEventID)
 	if err != nil {
 		return
 	}
@@ -125,4 +133,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case <-closeNotifier.CloseNotify():
 	case <-h.closeChan:
 	}
+}
+
+func (h *Handler) subscribe(w Writer, lastEventID string) (func(), error) {
+	h.groupLock.Lock()
+	defer h.groupLock.Unlock()
+	return h.group.Subscribe(w, lastEventID)
 }
