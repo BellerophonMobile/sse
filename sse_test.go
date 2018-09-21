@@ -33,8 +33,9 @@ type testWriter struct {
 	err error
 }
 
-func (w *testWriter) Close() {
+func (w *testWriter) Close() error {
 	w.closed = true
+	return nil
 }
 
 func (w *testWriter) Send(event *Event) error {

@@ -10,7 +10,7 @@ import (
 
 func TestGroupWriter(t *testing.T) {
 	var group GroupWriter
-	group.history.limit = 2
+	group.HistoryLimit = 2
 
 	var client1, client2 testWriter
 	var expected *Event
@@ -50,7 +50,6 @@ func TestGroupWriter(t *testing.T) {
 	unsub3, err := group.Subscribe(&client3, "")
 	assert.NoError(t, err)
 
-	assert.Equal(t, 10*time.Second, client3.retryTime)
 	assert.Equal(t, []*Event{
 		{ID: "2", Type: "test2", Data: "foobar2"},
 		{ID: "3", Type: "test3", Data: "foobar3"},
@@ -60,11 +59,11 @@ func TestGroupWriter(t *testing.T) {
 
 	unsub3()
 
-	assert.NoError(t, group.SetRetryTime(20*time.Second))
-
 	var client4 testWriter
 	unsub4, err := group.Subscribe(&client4, "2")
 	assert.NoError(t, err)
+
+	assert.NoError(t, group.SetRetryTime(20*time.Second))
 	assert.Equal(t, 20*time.Second, client4.retryTime)
 
 	assert.Equal(t, []*Event{
@@ -79,7 +78,6 @@ func TestGroupWriter(t *testing.T) {
 	var client5 testWriter
 	unsub5, err := group.Subscribe(&client5, "foobar")
 	assert.NoError(t, err)
-	assert.Equal(t, 20*time.Second, client5.retryTime)
 
 	assert.Equal(t, []*Event{
 		{ID: "2", Type: "test2", Data: "foobar2"},
@@ -100,7 +98,7 @@ func TestGroupWriter(t *testing.T) {
 	assert.True(t, client6.closed)
 
 	assert.Equal(t, 0, group.writers.Len())
-	assert.Equal(t, 0, group.history.items.Len())
+	assert.Equal(t, 0, group.history.Len())
 }
 
 func TestGroupWriter_bad(t *testing.T) {
@@ -123,6 +121,7 @@ func TestGroupWriter_badio(t *testing.T) {
 	}
 
 	var group GroupWriter
+	group.HistoryLimit = 5
 
 	unsub1, err := group.Subscribe(&client1, "")
 	assert.NoError(t, err)
@@ -130,7 +129,8 @@ func TestGroupWriter_badio(t *testing.T) {
 	assert.EqualError(t, group.SetRetryTime(5*time.Second), "test write error")
 	unsub1()
 
-	group.RetryTime = 10 * time.Second
+	assert.NoError(t, group.Send(&Event{ID: "1", Type: "test1", Data: "foobar1"}))
+
 	unsub1, err = group.Subscribe(&client1, "")
 	assert.EqualError(t, err, "test write error")
 }

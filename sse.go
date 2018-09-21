@@ -11,12 +11,13 @@ const (
 
 // Event is an SSE event. ID and event can be empty strings, in which case, they
 // will not be sent. If id is a single whitespace character, an empty ID will be
-// sent to reset the client's last-event-id.
+// sent to reset the client's Last-Event-ID. If Data is an empty string, a
+// value-less data field will be sent.
 type Event struct {
 	ID, Type, Data string
 }
 
-// Message is a convenience for sending an event without a type or ID.
+// Message is a convenience function for sending an event without a type or ID.
 func Message(w Writer, data string) error {
 	return w.Send(&Event{Data: data})
 }

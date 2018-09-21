@@ -11,7 +11,11 @@ import (
 
 // Reader wraps a normal io.Reader to read SSE events.
 type Reader struct {
-	RetryTime   time.Duration
+	// Whenever an event with a "retry" field is read, this is set to that value.
+	RetryTime time.Duration
+
+	// This is set to the ID of the last event with an "id" field. If an "id"
+	// field without a value is received, this is reset to the empty string.
 	LastEventID string
 
 	scanner *bufio.Scanner
@@ -21,14 +25,13 @@ type Reader struct {
 	dataBuf strings.Builder
 }
 
-// NewReader wraps the given io.Reader.
+// NewReader wraps the given io.Reader in a SSE Reader.
 func NewReader(r io.Reader) *Reader {
-	return &Reader{
-		scanner: bufio.NewScanner(r),
-	}
+	return &Reader{scanner: bufio.NewScanner(r)}
 }
 
-// NextEvent reads the next SSE event from the reader.
+// NextEvent reads the next SSE event from the reader. It blocks until an event
+// is available.
 func (r *Reader) NextEvent() (*Event, error) {
 	// From section 9.2.5 of the spec
 	// https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation

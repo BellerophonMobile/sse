@@ -7,20 +7,22 @@ import (
 
 const headerAccept = "Accept"
 
-// Writer is an interface capable of sending SSE events.
+// Writer is a type capable of sending SSE events.
 type Writer interface {
 	// Close releases any resources associated with this writer. This writer
 	// should no longer be used after this is called.
-	Close()
+	Close() error
 
-	// Send sends an event to this writer. ID and event can be empty strings, in
-	// which case, they will not be sent. If id is a single whitespace character,
-	// an empty ID will be sent to reset the client's last-event-id.
+	// Send writes an event to this writer. ID and Type can be empty strings, in
+	// which case, they will not be sent. If ID is a single whitespace character,
+	// an empty ID will be sent to reset the client's last-event-id. If Data is
+	// an empty string, a value-less "data" event will be sent.
 	Send(*Event) error
 
 	// SetRetryTime sets the client-side reconnection timeout for SSE-enabled
-	// clients. If the client disconnects, it will try to reconnect after this
-	// long. If the client doesn't support SSE, this is a no-op.
+	// clients. If the client is a browser and gets disconnected, it will try to
+	// reconnect after this long. If the client doesn't support SSE, this is a
+	// no-op.
 	SetRetryTime(time.Duration) error
 }
 

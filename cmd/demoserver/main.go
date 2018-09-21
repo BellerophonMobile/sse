@@ -22,13 +22,14 @@ aboard this tiny ship.
 func main() {
 	handler := sse.NewHandler(sse.HandlerConfig{
 		RetryTime:    5 * time.Second,
-		WriteTimeout: 1 * time.Second,
-		BufferSize:   20,
 		HistoryLimit: 10,
 	})
 
 	server := http.Server{
-		Addr:              ":8080",
+		Addr: ":8080",
+
+		// Important to set a timeout to prevent maliciously slow clients from
+		// easily consuming resources.
 		ReadHeaderTimeout: 200 * time.Millisecond,
 	}
 	shutdown := make(chan struct{})
