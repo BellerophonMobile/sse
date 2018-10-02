@@ -20,101 +20,68 @@ aboard this tiny ship.
 [%v]`
 
 func main() {
+	shutdownChan := make(chan struct{})
+
 	handler := sse.NewHandler(sse.HandlerConfig{
 		RetryTime:    5 * time.Second,
 		HistoryLimit: 10,
 	})
 
 	server := http.Server{
-		Addr: ":8080",
-
-		// Important to set a timeout to prevent maliciously slow clients from
-		// easily consuming resources.
+		Addr:              ":8080",
 		ReadHeaderTimeout: 200 * time.Millisecond,
 	}
-	shutdown := make(chan struct{})
-
-	go func() {
-		c := 0
-		for {
-			evt := &sse.Event{
-				ID:   fmt.Sprintf("%d", c),
-				Data: fmt.Sprintf(message, c),
-			}
-
-			if c%10 == 0 {
-				evt.Type = "urgentupdate"
-			}
-
-			handler.Send(evt)
-
-			fmt.Println("Generated:", evt.Data)
-			time.Sleep(1 * time.Second)
-			c++
-		}
-	}()
-
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-
-		<-c
-
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-
-		// First, shut down the server to get all clients to disconnect.
-		server.Shutdown(ctx)
-		cancel()
-
-		// Then, close the SSE handler.
-		handler.Close()
-		close(shutdown)
-	}()
 
 	http.Handle("/events", handler)
 	http.HandleFunc("/", viewer)
 
+	go sendLoop(handler)
+	go waitSignal(handler, &server, shutdownChan)
+
 	log.Fatal(server.ListenAndServe())
 
-	<-shutdown
+	<-shutdownChan
 }
 
-const html = `
-<!doctype html>
-<html>
-<body>
-<p>Events:</p>
-<div id="events"></div>
+func sendLoop(handler *sse.Handler) {
+	for i := 0; true; i++ {
+		evt := &sse.Event{
+			ID:   fmt.Sprintf("%d", i),
+			Data: fmt.Sprintf(message, i),
+		}
 
-<script>
-	var events = document.getElementById('events');
+		if i%10 == 0 {
+			evt.Type = "urgentupdate"
+		}
 
-	var source = new EventSource('/events');
-	source.addEventListener('open', function (e) {
-		console.log('open:', e);
-	});
-	source.addEventListener('error', function (e) {
-		console.log('error:', e);
-	});
-	source.addEventListener('message', function (e) {
-		console.log('message:', e.data);
-		var p = document.createElement('p');
-		p.textContent = e.data;
-		events.insertBefore(p, events.firstChild);
-	});
-	source.addEventListener('urgentupdate', function (e) {
-		console.log('urgent update:', e.data);
-		var p = document.createElement('p');
-		p.textContent = e.data;
-		p.style.color = 'red';
-		events.insertBefore(p, events.firstChild);
-	});
-</script>
-</body>
-</html>
-`
+		if err := handler.Send(evt); err != nil {
+			log.Println("event send error:", err)
+			return
+		}
+
+		log.Println("generated:", evt.Data)
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func waitSignal(handler *sse.Handler, server *http.Server, shutdownChan chan struct{}) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	<-c
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+
+	// First, shut down the server to get all clients to disconnect.
+	server.Shutdown(ctx)
+	cancel()
+
+	// Then, close the SSE handler.
+	handler.Close()
+	close(shutdownChan)
+}
 
 func viewer(w http.ResponseWriter, r *http.Request) {
-	log.Println("Viewer")
+	log.Println("viewer")
 	fmt.Fprint(w, html)
 }
