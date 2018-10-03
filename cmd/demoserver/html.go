@@ -29,7 +29,7 @@ const html = `
 
 			function append(msg) {
 				var p = document.createElement('p');
-				p.textContent = e.data;
+				p.textContent = msg;
 
 				events.insertBefore(p, events.firstChild);
 				return p

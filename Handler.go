@@ -1,6 +1,7 @@
 package sse
 
 import (
+	"container/list"
 	"errors"
 	"net/http"
 	"sync"
@@ -43,10 +44,18 @@ type HandlerConfig struct {
 // history sending will respect the Last-Event-ID header if set, to not send
 // events the client already has.
 type Handler struct {
-	RetryTime time.Duration
+	RetryTime    time.Duration
+	HistoryLimit int
 
-	group     GroupWriter
-	groupLock sync.Mutex
+	plainSink PlainSink
+	eventSink EventSink
+
+	plainWriter fanOutWriter
+	eventWriter fanOutWriter
+
+	history list.List
+
+	lock sync.Mutex
 
 	closed    bool
 	closeChan chan struct{}
@@ -54,14 +63,23 @@ type Handler struct {
 
 // NewHandler constructs a new Handler with the given options.
 func NewHandler(config HandlerConfig) *Handler {
-	return &Handler{
-		RetryTime: config.RetryTime,
+	h := &Handler{
+		RetryTime:    config.RetryTime,
+		HistoryLimit: config.HistoryLimit,
 
-		group: GroupWriter{
-			HistoryLimit: config.HistoryLimit,
-		},
 		closeChan: make(chan struct{}),
 	}
+
+	h.plainSink = PlainSink{
+		Writer:  &h.plainWriter,
+		Flusher: &h.plainWriter,
+	}
+	h.eventSink = EventSink{
+		Writer:  &h.eventWriter,
+		Flusher: &h.eventWriter,
+	}
+
+	return h
 }
 
 // Close disconnects all connected clients from the handler. The handler should
@@ -73,9 +91,11 @@ func (h *Handler) Close() {
 
 	h.closed = true
 
-	h.groupLock.Lock()
-	defer h.groupLock.Unlock()
-	h.group.Close()
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	h.plainSink.Close()
+	h.eventSink.Close()
 
 	close(h.closeChan)
 }
@@ -92,9 +112,21 @@ func (h *Handler) Send(evt *Event) error {
 		return ErrHandlerClosed
 	}
 
-	h.groupLock.Lock()
-	defer h.groupLock.Unlock()
-	return h.group.Send(evt)
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	h.appendHistory(evt)
+
+	plainErr := h.plainSink.Send(evt)
+	evtErr := h.eventSink.Send(evt)
+
+	if plainErr != nil {
+		return plainErr
+	}
+	if evtErr != nil {
+		return evtErr
+	}
+	return nil
 }
 
 // ServeHTTP implements http.Handler, sending any events to all connected
@@ -113,18 +145,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writer := NewWriter(w, r)
-
-	if h.RetryTime > 0 {
-		if err := writer.SetRetryTime(h.RetryTime); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-	}
-
-	lastEventID := r.Header.Get(headerLastEventID)
-	unsubscribe, err := h.subscribe(writer, lastEventID)
+	unsubscribe, err := h.add(w, r)
 	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	defer unsubscribe()
@@ -135,8 +158,76 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) subscribe(w Writer, lastEventID string) (func(), error) {
-	h.groupLock.Lock()
-	defer h.groupLock.Unlock()
-	return h.group.Subscribe(w, lastEventID)
+func (h *Handler) add(w http.ResponseWriter, r *http.Request) (func(), error) {
+	sink := NewSink(w, r)
+
+	if err := h.sendRetryTime(sink); err != nil {
+		return nil, err
+	}
+
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	lastEventID := r.Header.Get(headerLastEventID)
+
+	if err := h.sendHistory(sink, lastEventID); err != nil {
+		return nil, err
+	}
+
+	unsubscribe := h.subscribe(w, r)
+
+	return func() {
+		h.lock.Lock()
+		defer h.lock.Unlock()
+		unsubscribe()
+	}, nil
+}
+
+func (h *Handler) sendRetryTime(s Sink) error {
+	if h.RetryTime > 0 {
+		return s.SetRetryTime(h.RetryTime)
+	}
+
+	return nil
+}
+
+func (h *Handler) sendHistory(s Sink, id string) error {
+	for el := h.findHistory(id); el != nil; el = el.Next() {
+		if err := s.Send(el.Value.(*Event)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *Handler) subscribe(w http.ResponseWriter, r *http.Request) func() {
+	isSSE := r.Header.Get(headerAccept) == MIMETypeSSE
+
+	if isSSE {
+		return h.eventWriter.Add(w)
+	} else {
+		return h.plainWriter.Add(w)
+	}
+}
+
+func (h *Handler) appendHistory(evt *Event) {
+	h.history.PushBack(evt)
+
+	for h.history.Len() > h.HistoryLimit {
+		h.history.Remove(h.history.Front())
+	}
+}
+
+func (h *Handler) findHistory(id string) *list.Element {
+	if id == "" {
+		return h.history.Front()
+	}
+
+	for el := h.history.Front(); el != nil; el = el.Next() {
+		if el.Value.(*Event).ID == id {
+			return el.Next()
+		}
+	}
+
+	return h.history.Front()
 }

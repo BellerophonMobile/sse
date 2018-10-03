@@ -25,7 +25,7 @@ func (w *badWriter) Write(p []byte) (int, error) {
 	return w.n, w.err
 }
 
-type testWriter struct {
+type testSink struct {
 	events    []*Event
 	closed    bool
 	retryTime time.Duration
@@ -33,25 +33,25 @@ type testWriter struct {
 	err error
 }
 
-func (w *testWriter) Close() error {
-	w.closed = true
+func (s *testSink) Close() error {
+	s.closed = true
 	return nil
 }
 
-func (w *testWriter) Send(event *Event) error {
-	if w.err == nil {
-		w.events = append(w.events, event)
+func (s *testSink) Send(event *Event) error {
+	if s.err == nil {
+		s.events = append(s.events, event)
 	}
-	return w.err
+	return s.err
 }
 
-func (w *testWriter) SetRetryTime(retry time.Duration) error {
-	w.retryTime = retry
-	return w.err
+func (s *testSink) SetRetryTime(retry time.Duration) error {
+	s.retryTime = retry
+	return s.err
 }
 
 func TestMessage(t *testing.T) {
-	var w testWriter
+	var w testSink
 	expected := &Event{Data: "Test"}
 
 	assert.NoError(t, Message(&w, "Test"))

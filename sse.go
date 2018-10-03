@@ -1,5 +1,5 @@
 // Package sse implements the HTML Server-Sent events specification. It provides
-// a Reader to parse SSE events from an io.Reader, and several Writers to manage
+// a Reader to parse SSE events from an io.Reader, and several Sinks to manage
 // dispatching SSE events to clients.
 package sse
 
@@ -18,6 +18,6 @@ type Event struct {
 }
 
 // Message is a convenience function for sending an event without a type or ID.
-func Message(w Writer, data string) error {
-	return w.Send(&Event{Data: data})
+func Message(s Sink, data string) error {
+	return s.Send(&Event{Data: data})
 }

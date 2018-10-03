@@ -7,24 +7,24 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewWriter_plain(t *testing.T) {
+func TestNewSink_plain(t *testing.T) {
 	assertions := assert.New(t)
 
 	req := httptest.NewRequest("GET", "http://example.com/test", nil)
 	resp := httptest.NewRecorder()
 
-	w := NewWriter(resp, req)
+	w := NewSink(resp, req)
 
 	assertions.Equal("no-cache", resp.Header().Get("Cache-Control"))
 	assertions.Equal("keep-alive", resp.Header().Get("Connection"))
 	assertions.Equal("text/plain", resp.Header().Get("Content-Type"))
 
-	if _, ok := w.(*PlainWriter); !ok {
-		t.Error("Writer is not a PlainWriter")
+	if _, ok := w.(*PlainSink); !ok {
+		t.Error("Sink is not a PlainSink")
 	}
 }
 
-func TestNewWriter_sse(t *testing.T) {
+func TestNewSink_sse(t *testing.T) {
 	assertions := assert.New(t)
 
 	req := httptest.NewRequest("GET", "http://example.com/test", nil)
@@ -32,13 +32,13 @@ func TestNewWriter_sse(t *testing.T) {
 
 	req.Header.Set("Accept", "text/event-stream")
 
-	w := NewWriter(resp, req)
+	w := NewSink(resp, req)
 
 	assertions.Equal("no-cache", resp.Header().Get("Cache-Control"))
 	assertions.Equal("keep-alive", resp.Header().Get("Connection"))
 	assertions.Equal("text/event-stream", resp.Header().Get("Content-Type"))
 
-	if _, ok := w.(*EventWriter); !ok {
-		t.Error("Writer is not a EventWriter")
+	if _, ok := w.(*EventSink); !ok {
+		t.Error("Sink is not a EventSink")
 	}
 }

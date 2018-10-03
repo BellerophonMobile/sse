@@ -7,8 +7,8 @@ import (
 
 const headerAccept = "Accept"
 
-// Writer is a type capable of sending SSE events.
-type Writer interface {
+// Sink is a type capable of sending SSE events.
+type Sink interface {
 	// Close releases any resources associated with this writer. This writer
 	// should no longer be used after this is called.
 	Close() error
@@ -26,10 +26,9 @@ type Writer interface {
 	SetRetryTime(time.Duration) error
 }
 
-// NewWriter creates a writer based on the Accept header of the given request.
-// It also sets an appropriate Content-Type, Cache-Control, and Connection
-// headers.
-func NewWriter(w http.ResponseWriter, r *http.Request) Writer {
+// NewSink creates a sink based on the Accept header of the given request. It
+// also sets an appropriate Content-Type, Cache-Control, and Connection headers.
+func NewSink(w http.ResponseWriter, r *http.Request) Sink {
 	isSSE := r.Header.Get(headerAccept) == MIMETypeSSE
 
 	w.Header().Set(headerCacheControl, cacheControlNoCache)
@@ -37,14 +36,14 @@ func NewWriter(w http.ResponseWriter, r *http.Request) Writer {
 
 	if !isSSE {
 		w.Header().Add(headerContentType, MIMETypePlain)
-		writer := &PlainWriter{Writer: w}
+		writer := &PlainSink{Writer: w}
 		writer.Flusher, _ = w.(http.Flusher)
 		return writer
 	}
 
 	w.Header().Add(headerContentType, MIMETypeSSE)
 
-	writer := &EventWriter{Writer: w}
+	writer := &EventSink{Writer: w}
 	writer.Flusher, _ = w.(http.Flusher)
 
 	return writer

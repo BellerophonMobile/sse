@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPlainWriterSend_noflush(t *testing.T) {
+func TestPlainSinkSend_noflush(t *testing.T) {
 	var buf bytes.Buffer
 
-	w := PlainWriter{Writer: &buf}
+	w := PlainSink{Writer: &buf}
 
 	assert.NoError(t, w.Send(&Event{Data: "one"}))
 	assert.NoError(t, w.Send(&Event{ID: "id2", Data: "two"}))
@@ -23,11 +23,11 @@ func TestPlainWriterSend_noflush(t *testing.T) {
 	assert.Equal(t, expected, buf.String())
 }
 
-func TestPlainWriterSend_flush(t *testing.T) {
+func TestPlainSinkSend_flush(t *testing.T) {
 	var buf bytes.Buffer
 	var flusher testFlusher
 
-	w := PlainWriter{
+	w := PlainSink{
 		Writer:  &buf,
 		Flusher: &flusher,
 	}
@@ -49,22 +49,22 @@ func TestPlainWriterSend_flush(t *testing.T) {
 	assert.Equal(t, expected, buf.String())
 }
 
-func TestPlainWriterSend_error(t *testing.T) {
-	w := PlainWriter{
+func TestPlainSinkSend_error(t *testing.T) {
+	w := PlainSink{
 		Writer: &badWriter{err: errors.New("test write error")},
 	}
 
 	assert.EqualError(t, w.Send(&Event{Data: "test"}), "test write error")
 }
 
-func TestPlainWriterClose(t *testing.T) {
-	var w PlainWriter
-	// Close should be a no-op on a PlainWriter.
+func TestPlainSinkClose(t *testing.T) {
+	var w PlainSink
+	// Close should be a no-op on a PlainSink.
 	assert.NotPanics(t, func() { w.Close() })
 }
 
-func TestPlainWriterSetRetryTime(t *testing.T) {
-	var w PlainWriter
-	// SetRetryTime should be a no-op on a PlainWriter.
+func TestPlainSinkSetRetryTime(t *testing.T) {
+	var w PlainSink
+	// SetRetryTime should be a no-op on a PlainSink.
 	assert.Nil(t, w.SetRetryTime(10*time.Second))
 }

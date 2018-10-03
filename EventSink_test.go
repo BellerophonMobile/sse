@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestEventWriterSend_noflush(t *testing.T) {
+func TestEventSinkSend_noflush(t *testing.T) {
 	var buf bytes.Buffer
 
-	w := EventWriter{Writer: &buf}
+	w := EventSink{Writer: &buf}
 
 	assert.NoError(t, w.Send(&Event{Data: "one"}))
 	assert.NoError(t, w.Send(&Event{ID: "id2", Data: "two"}))
@@ -39,11 +39,11 @@ data:line4
 	assert.Equal(t, expected, buf.String())
 }
 
-func TestEventWriterSend_flush(t *testing.T) {
+func TestEventSinkSend_flush(t *testing.T) {
 	var buf bytes.Buffer
 	var flusher testFlusher
 
-	w := EventWriter{
+	w := EventSink{
 		Writer:  &buf,
 		Flusher: &flusher,
 	}
@@ -84,8 +84,8 @@ data:line4
 	assert.Equal(t, expected, buf.String())
 }
 
-func TestEventWriterSend_error(t *testing.T) {
-	w := EventWriter{Writer: &badWriter{err: errors.New("test write error")}}
+func TestEventSinkSend_error(t *testing.T) {
+	w := EventSink{Writer: &badWriter{err: errors.New("test write error")}}
 
 	assert.EqualError(t, w.Send(&Event{Data: "test"}), "test write error")
 	assert.EqualError(t, w.Send(&Event{ID: "1", Data: "test"}), "test write error")
@@ -93,16 +93,16 @@ func TestEventWriterSend_error(t *testing.T) {
 	assert.EqualError(t, w.Send(&Event{Type: "foo", Data: "test"}), "test write error")
 }
 
-func TestEventWriterClose(t *testing.T) {
-	var w EventWriter
-	// Close should be a no-op on a EventWriter.
+func TestEventSinkClose(t *testing.T) {
+	var w EventSink
+	// Close should be a no-op on a EventSink.
 	assert.NotPanics(t, func() { w.Close() })
 }
 
-func TestEventWriterSetRetryTime_noflush(t *testing.T) {
+func TestEventSinkSetRetryTime_noflush(t *testing.T) {
 	var buf bytes.Buffer
 
-	w := EventWriter{Writer: &buf}
+	w := EventSink{Writer: &buf}
 
 	assert.NoError(t, w.SetRetryTime(10*time.Second))
 
@@ -111,11 +111,11 @@ func TestEventWriterSetRetryTime_noflush(t *testing.T) {
 	assert.Equal(t, expected, buf.String())
 }
 
-func TestEventWriterSetRetryTime_flush(t *testing.T) {
+func TestEventSinkSetRetryTime_flush(t *testing.T) {
 	var buf bytes.Buffer
 	var flusher testFlusher
 
-	w := EventWriter{
+	w := EventSink{
 		Writer:  &buf,
 		Flusher: &flusher,
 	}
